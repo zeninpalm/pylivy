@@ -1,11 +1,10 @@
-from typing import Iterable, Iterator
-
-
 def polling_intervals(
-    start: Iterable[float], rest: float, max_duration: float = None
-) -> Iterator[float]:
+    start, rest, max_duration = None
+):
     def _intervals():
-        yield from start
+        for i in start:
+            yield i
+
         while True:
             yield rest
 

@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 import pytest
 import requests
 import pandas
@@ -18,22 +16,21 @@ def livy_available(livy_url):
 
 
 def session_stopped(livy_url, session_id):
-    response = requests.get(f"{livy_url}/session/{session_id}")
+    response = requests.get("%s/session/%s" % (livy_url, session_id))
     if response.status_code == 404:
         return True
     else:
         return response.get_json()["state"] == "shutting_down"
 
 
-@dataclass
 class Parameters:
-    print_foo_code: str
-    print_foo_output: str
-    create_dataframe_code: str
-    dataframe_count_code: str
-    dataframe_count_output: str
-    error_code: str
-
+    def __init__(self, print_foo_code, print_foo_output, create_dataframe_code, dataframe_count_code, dataframe_count_output, error_code):
+        self.print_foo_output = print_foo_output
+        self.print_foo_code = print_foo_code
+        self.create_dataframe_code = create_dataframe_code
+        self.dataframe_count_code = dataframe_count_code
+        self.dataframe_count_output = dataframe_count_output
+        self.error_code = error_code
 
 SPARK_CREATE_DF = """
 import org.apache.spark.sql.Row

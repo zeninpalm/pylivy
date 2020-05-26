@@ -1,10 +1,9 @@
 import time
 import json
-from typing import Any, Dict, List, Optional
 
 import pandas
 
-from livy.client import LivyClient, Auth, Verify
+from livy.client import LivyClient
 from livy.models import (
     SessionKind,
     SessionState,
@@ -25,9 +24,7 @@ cat(unlist(collect(toJSON({}))), sep = '\n')
 """
 
 
-def serialise_dataframe_code(
-    dataframe_name: str, session_kind: SessionKind
-) -> str:
+def serialise_dataframe_code(dataframe_name, session_kind):
     try:
         template = {
             SessionKind.SPARK: SERIALISE_DATAFRAME_TEMPLATE_SPARK,
@@ -37,12 +34,12 @@ def serialise_dataframe_code(
         }[session_kind]
     except KeyError:
         raise RuntimeError(
-            f"read not supported for sessions of kind {session_kind}"
+            "read not supported for sessions of kind %s" % session_kind
         )
     return template.format(dataframe_name)
 
 
-def deserialise_dataframe(text: str) -> pandas.DataFrame:
+def deserialise_dataframe(text):
     rows = []
     for line in text.split("\n"):
         if line:
@@ -50,7 +47,7 @@ def deserialise_dataframe(text: str) -> pandas.DataFrame:
     return pandas.DataFrame.from_records(rows)
 
 
-def dataframe_from_json_output(json_output: dict) -> pandas.DataFrame:
+def dataframe_from_json_output(json_output):
     try:
         fields = json_output["schema"]["fields"]
         columns = [field["name"] for field in fields]
@@ -61,77 +58,28 @@ def dataframe_from_json_output(json_output: dict) -> pandas.DataFrame:
 
 
 class LivySession:
-    """Manages a remote Livy session and high-level interactions with it.
-
-    The py_files, files, jars and archives arguments are lists of URLs, e.g.
-    ["s3://bucket/object", "hdfs://path/to/file", ...] and must be reachable by
-    the Spark driver process.  If the provided URL has no scheme, it's
-    considered to be relative to the default file system configured in the Livy
-    server.
-
-    URLs in the py_files argument are copied to a temporary staging area and
-    inserted into Python's sys.path ahead of the standard library paths. This
-    allows you to import .py, .zip and .egg files in Python.
-
-    URLs for jars, py_files, files and archives arguments are all copied to the
-    same working directory on the Spark cluster.
-
-    The driver_memory and executor_memory arguments have the same format as JVM
-    memory strings with a size unit suffix ("k", "m", "g" or "t") (e.g. 512m,
-    2g).
-
-    See https://spark.apache.org/docs/latest/configuration.html for more
-    information on Spark configuration properties.
-
-    :param url: The URL of the Livy server.
-    :param auth: A requests-compatible auth object to use when making requests.
-    :param verify: Either a boolean, in which case it controls whether we
-        verify the server’s TLS certificate, or a string, in which case it must
-        be a path to a CA bundle to use. Defaults to ``True``.
-    :param kind: The kind of session to create.
-    :param proxy_user: User to impersonate when starting the session.
-    :param jars: URLs of jars to be used in this session.
-    :param py_files: URLs of Python files to be used in this session.
-    :param files: URLs of files to be used in this session.
-    :param driver_memory: Amount of memory to use for the driver process (e.g.
-        '512m').
-    :param driver_cores: Number of cores to use for the driver process.
-    :param executor_memory: Amount of memory to use per executor process (e.g.
-        '512m').
-    :param executor_cores: Number of cores to use for each executor.
-    :param num_executors: Number of executors to launch for this session.
-    :param archives: URLs of archives to be used in this session.
-    :param queue: The name of the YARN queue to which submitted.
-    :param name: The name of this session.
-    :param spark_conf: Spark configuration properties.
-    :param echo: Whether to echo output printed in the remote session. Defaults
-        to ``True``.
-    :param check: Whether to raise an exception when a statement in the remote
-        session fails. Defaults to ``True``.
-    """
-
     def __init__(
         self,
-        url: str,
-        auth: Auth = None,
-        verify: Verify = True,
-        kind: SessionKind = SessionKind.PYSPARK,
-        proxy_user: str = None,
-        jars: List[str] = None,
-        py_files: List[str] = None,
-        files: List[str] = None,
-        driver_memory: str = None,
-        driver_cores: int = None,
-        executor_memory: str = None,
-        executor_cores: int = None,
-        num_executors: int = None,
-        archives: List[str] = None,
-        queue: str = None,
-        name: str = None,
-        spark_conf: Dict[str, Any] = None,
-        echo: bool = True,
-        check: bool = True,
-    ) -> None:
+        url,
+        auth = None,
+        verify = True,
+        kind = SessionKind.PYSPARK,
+        proxy_user = None,
+        jars = None,
+        py_files = None,
+        files = None,
+        driver_memory = None,
+        driver_cores = None,
+        executor_memory = None,
+        executor_cores = None,
+        num_executors = None,
+        archives = None,
+        queue = None,
+        name = None,
+        spark_conf = None,
+        echo = True,
+        check = True,
+    ):
         self.client = LivyClient(url, auth, verify=verify)
         self.kind = kind
         self.proxy_user = proxy_user
@@ -149,16 +97,16 @@ class LivySession:
         self.spark_conf = spark_conf
         self.echo = echo
         self.check = check
-        self.session_id: Optional[int] = None
+        self.session_id = None
 
-    def __enter__(self) -> "LivySession":
+    def __enter__(self):
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
-    def start(self) -> None:
+    def start(self):
         """Create the remote Spark session and wait for it to be ready."""
 
         session = self.client.create_session(
@@ -184,7 +132,7 @@ class LivySession:
             time.sleep(next(intervals))
 
     @property
-    def state(self) -> SessionState:
+    def state(self):
         """The state of the managed Spark session."""
         if self.session_id is None:
             raise ValueError("session not yet started")
@@ -193,13 +141,13 @@ class LivySession:
             raise ValueError("session not found - it may have been shut down")
         return session.state
 
-    def close(self) -> None:
+    def close(self):
         """Kill the managed Spark session."""
         if self.session_id is not None:
             self.client.delete_session(self.session_id)
         self.client.close()
 
-    def run(self, code: str) -> Output:
+    def run(self, code):
         """Run some code in the managed Spark session.
 
         :param code: The code to run.
@@ -211,7 +159,7 @@ class LivySession:
             output.raise_for_status()
         return output
 
-    def read(self, dataframe_name: str) -> pandas.DataFrame:
+    def read(self, dataframe_name):
         """Evaluate and retrieve a Spark dataframe in the managed session.
 
         :param dataframe_name: The name of the Spark dataframe to read.
@@ -223,7 +171,7 @@ class LivySession:
             raise RuntimeError("statement had no text output")
         return deserialise_dataframe(output.text)
 
-    def read_sql(self, code: str) -> pandas.DataFrame:
+    def read_sql(self, code):
         """Evaluate a Spark SQL satatement and retrieve the result.
 
         :param code: The Spark SQL statement to evaluate.
@@ -236,7 +184,7 @@ class LivySession:
             raise RuntimeError("statement had no JSON output")
         return dataframe_from_json_output(output.json)
 
-    def _execute(self, code: str) -> Output:
+    def _execute(self, code):
         if self.session_id is None:
             raise ValueError("session not yet started")
 

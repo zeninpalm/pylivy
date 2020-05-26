@@ -64,7 +64,7 @@ def test_list_sessions(requests_mock, mocker):
 
 def test_get_session(requests_mock, mocker):
     requests_mock.get(
-        f"http://example.com/sessions/{MOCK_SESSION_ID}",
+        "http://example.com/sessions/%s" % MOCK_SESSION_ID,
         json=MOCK_SESSION_JSON,
     )
     mocker.patch.object(Session, "from_json")
@@ -123,7 +123,7 @@ def test_create_session(requests_mock, mocker):
 
 def test_delete_session(requests_mock):
     requests_mock.delete(
-        f"http://example.com/sessions/{MOCK_SESSION_ID}",
+        "http://example.com/sessions/%s" % MOCK_SESSION_ID,
         json={"msg": "deleted"},
     )
 
@@ -135,7 +135,7 @@ def test_delete_session(requests_mock):
 
 def test_list_statements(requests_mock, mocker):
     requests_mock.get(
-        f"http://example.com/sessions/{MOCK_SESSION_ID}/statements",
+        "http://example.com/sessions/%s/statements" % MOCK_SESSION_ID,
         json={"statements": [MOCK_STATEMENT_JSON]},
     )
     mocker.patch.object(Statement, "from_json")
@@ -151,8 +151,8 @@ def test_list_statements(requests_mock, mocker):
 
 def test_get_statement(requests_mock, mocker):
     requests_mock.get(
-        f"http://example.com/sessions/{MOCK_SESSION_ID}"
-        + f"/statements/{MOCK_STATEMENT_ID}",
+        "http://example.com/sessions/%s" % MOCK_SESSION_ID
+        + "/statements/%s" % MOCK_STATEMENT_ID,
         json=MOCK_STATEMENT_JSON,
     )
     mocker.patch.object(Statement, "from_json")
@@ -171,7 +171,7 @@ def test_create_statement(requests_mock, mocker):
         "http://example.com/version", json={"version": "0.5.0-incubating"}
     )
     requests_mock.post(
-        f"http://example.com/sessions/{MOCK_SESSION_ID}/statements",
+        "http://example.com/sessions/%s/statements" % MOCK_SESSION_ID,
         json=MOCK_STATEMENT_JSON,
     )
     mocker.patch.object(Statement, "from_json")
@@ -242,7 +242,7 @@ def test_create_batch(requests_mock, mocker):
 
 def test_get_batch(requests_mock, mocker):
     requests_mock.get(
-        f"http://example.com/batches/{MOCK_BATCH_ID}", json=MOCK_BATCH_JSON,
+        "http://example.com/batches/%s" % MOCK_BATCH_ID, json=MOCK_BATCH_JSON,
     )
     mocker.patch.object(Batch, "from_json")
 
@@ -255,7 +255,7 @@ def test_get_batch(requests_mock, mocker):
 
 def test_get_batch_log(requests_mock, mocker):
     requests_mock.get(
-        f"http://example.com/batches/{MOCK_BATCH_ID}/log",
+        "http://example.com/batches/%s/log" % MOCK_BATCH_ID,
         json=MOCK_BATCH_LOG_JSON,
     )
     mocker.patch.object(BatchLog, "from_json")
