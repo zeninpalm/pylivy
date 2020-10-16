@@ -18,6 +18,7 @@ MOCK_STATEMENT_ID = 12
 MOCK_CODE = "mock code"
 MOCK_PROXY_USER = "proxy-user"
 MOCK_SPARK_CONF = {"spark.master": "yarn", "spark.submit.deployMode": "client"}
+MOCK_HEARTBEAT_TIMEOUT = 500
 MOCK_JARS = ["mock1.jar", "mock2.jar"]
 MOCK_PY_FILES = ["mock1.py", "mock2.py"]
 MOCK_FILES = ["mockfile1.txt", "mockfile2.txt"]
@@ -37,6 +38,21 @@ MOCK_BATCH_ID = 2398
 MOCK_BATCH_LOG_JSON = {"mock": "batch_log"}
 
 
+def test_auth(requests_mock, mocker):
+    requests_mock.get("http://example.com/sessions", json={"sessions": []})
+    mocker.patch.object(Session, "from_json")
+
+    def dummy_auth(request):
+        request.headers["Authorization"] = "dummy-token"
+        return request
+
+    client = LivyClient("http://example.com", auth=dummy_auth)
+    client.list_sessions()
+
+    [request] = requests_mock.request_history
+    assert request.headers["Authorization"] == "dummy-token"
+
+
 @pytest.mark.parametrize("verify", [True, False, "my/ca/bundle"])
 def test_verify(requests_mock, mocker, verify):
     requests_mock.get("http://example.com/sessions", json={"sessions": []})
@@ -47,6 +63,26 @@ def test_verify(requests_mock, mocker, verify):
 
     [request] = requests_mock.request_history
     assert request.verify is verify
+
+
+def test_custom_requests_session(mocker):
+    mocker.patch.object(Session, "from_json")
+
+    mock_requests_session = mocker.Mock()
+    mock_response = mocker.Mock()
+    mock_response.json.return_value = {"sessions": []}
+    mock_requests_session.request.return_value = mock_response
+
+    client = LivyClient(
+        "http://example.com", requests_session=mock_requests_session
+    )
+    client.list_sessions()
+
+    mock_requests_session.request.assert_called_once()
+
+    # Check that a custom session does not get closed
+    client.close()
+    mock_requests_session.close.assert_not_called()
 
 
 def test_list_sessions(requests_mock, mocker):
@@ -87,7 +123,6 @@ def test_create_session(requests_mock, mocker):
     session = client.create_session(
         SessionKind.PYSPARK,
         proxy_user=MOCK_PROXY_USER,
-        spark_conf=MOCK_SPARK_CONF,
         jars=MOCK_JARS,
         py_files=MOCK_PY_FILES,
         files=MOCK_FILES,
@@ -99,6 +134,8 @@ def test_create_session(requests_mock, mocker):
         archives=MOCK_ARCHIVES,
         queue=MOCK_QUEUE,
         name=MOCK_NAME,
+        spark_conf=MOCK_SPARK_CONF,
+        heartbeat_timeout=MOCK_HEARTBEAT_TIMEOUT,
     )
 
     assert session == Session.from_json.return_value
@@ -107,6 +144,7 @@ def test_create_session(requests_mock, mocker):
         "kind": "pyspark",
         "proxyUser": MOCK_PROXY_USER,
         "conf": MOCK_SPARK_CONF,
+        "heartbeatTimeoutInSecond": MOCK_HEARTBEAT_TIMEOUT,
         "jars": MOCK_JARS,
         "pyFiles": MOCK_PY_FILES,
         "files": MOCK_FILES,

@@ -44,19 +44,30 @@ class JsonClient:
     """
 
     def __init__(
-        self, url: str, auth: Auth = None, verify: Verify = True
+        self,
+        url: str,
+        auth: Auth = None,
+        verify: Verify = True,
+        requests_session: requests.Session = None,
     ) -> None:
+
         self.url = url
-        self.session = requests.Session()
-        if auth is not None:
-            self.session.auth = auth
-        self.session.verify = verify
+        self.auth = auth
+        self.verify = verify
+
+        if requests_session is None:
+            self.session = requests.Session()
+            self.managed_session = True
+        else:
+            self.session = requests_session
+            self.managed_session = False
 
     def close(self) -> None:
-        self.session.close()
+        if self.managed_session:
+            self.session.close()
 
     def get(self, endpoint: str = "", params: dict = None) -> dict:
-        return self._request("GET", endpoint)
+        return self._request("GET", endpoint, params=params)
 
     def post(self, endpoint: str, data: dict = None) -> dict:
         return self._request("POST", endpoint, data)
@@ -72,7 +83,14 @@ class JsonClient:
         params: dict = None,
     ) -> dict:
         url = self.url.rstrip("/") + endpoint
-        response = self.session.request(method, url, json=data, params=params)
+        response = self.session.request(
+            method,
+            url,
+            auth=self.auth,
+            verify=self.verify,
+            json=data,
+            params=params,
+        )
         response.raise_for_status()
         return response.json()
 
@@ -85,16 +103,23 @@ class LivyClient:
     :param verify: Either a boolean, in which case it controls whether we
         verify the server’s TLS certificate, or a string, in which case it must
         be a path to a CA bundle to use. Defaults to ``True``.
+    :param requests_session: A specific ``requests.Session`` to use, allowing
+        advanced customisation. The caller is responsible for closing the
+        session.
     """
 
     def __init__(
-        self, url: str, auth: Auth = None, verify: Verify = True
+        self,
+        url: str,
+        auth: Auth = None,
+        verify: Verify = True,
+        requests_session: requests.Session = None,
     ) -> None:
-        self._client = JsonClient(url, auth, verify)
+        self._client = JsonClient(url, auth, verify, requests_session)
         self._server_version_cache: Optional[Version] = None
 
     def close(self) -> None:
-        """Close the underlying requests session."""
+        """Close the underlying requests session, if managed by this class."""
         self._client.close()
 
     def server_version(self) -> Version:
@@ -134,6 +159,7 @@ class LivyClient:
         queue: str = None,
         name: str = None,
         spark_conf: Dict[str, Any] = None,
+        heartbeat_timeout: int = None,
     ) -> Session:
         """Create a new session in Livy.
 
@@ -173,6 +199,8 @@ class LivyClient:
         :param queue: The name of the YARN queue to which submitted.
         :param name: The name of this session.
         :param spark_conf: Spark configuration properties.
+        :param heartbeat_timeout: Optional Timeout in seconds to which session
+            be automatically orphaned if no heartbeat is received.
         """
         if self.legacy_server():
             valid_kinds = VALID_LEGACY_SESSION_KINDS
@@ -185,33 +213,27 @@ class LivyClient:
                 f"this version (should be one of {valid_kinds})"
             )
 
-        body: Dict[str, Any] = {"kind": kind.value}
-        if proxy_user is not None:
-            body["proxyUser"] = proxy_user
-        if jars is not None:
-            body["jars"] = jars
-        if py_files is not None:
-            body["pyFiles"] = py_files
-        if files is not None:
-            body["files"] = files
-        if driver_memory is not None:
-            body["driverMemory"] = driver_memory
-        if driver_cores is not None:
-            body["driverCores"] = driver_cores
-        if executor_memory is not None:
-            body["executorMemory"] = executor_memory
-        if executor_cores is not None:
-            body["executorCores"] = executor_cores
-        if num_executors is not None:
-            body["numExecutors"] = num_executors
-        if archives is not None:
-            body["archives"] = archives
-        if queue is not None:
-            body["queue"] = queue
-        if name is not None:
-            body["name"] = name
-        if spark_conf is not None:
-            body["conf"] = spark_conf
+        interactive_session_params = {"kind": kind.value}
+        if heartbeat_timeout is not None:
+            interactive_session_params[
+                "heartbeatTimeoutInSecond"
+            ] = heartbeat_timeout
+        common_params = _new_session_body(
+            proxy_user,
+            jars,
+            py_files,
+            files,
+            driver_memory,
+            driver_cores,
+            executor_memory,
+            executor_cores,
+            num_executors,
+            archives,
+            queue,
+            name,
+            spark_conf,
+        )
+        body = {**interactive_session_params, **common_params}
 
         data = self._client.post("/sessions", data=body)
         return Session.from_json(data)
@@ -342,37 +364,27 @@ class LivyClient:
         :param spark_conf: Spark configuration properties.
         """
 
-        body: Dict[str, Any] = {"file": file}
+        batch_session_params: Dict[str, Any] = {"file": file}
         if class_name is not None:
-            body["className"] = class_name
+            batch_session_params["className"] = class_name
         if args is not None:
-            body["args"] = args
-        if proxy_user is not None:
-            body["proxyUser"] = proxy_user
-        if jars is not None:
-            body["jars"] = jars
-        if py_files is not None:
-            body["pyFiles"] = py_files
-        if files is not None:
-            body["files"] = files
-        if driver_memory is not None:
-            body["driverMemory"] = driver_memory
-        if driver_cores is not None:
-            body["driverCores"] = driver_cores
-        if executor_memory is not None:
-            body["executorMemory"] = executor_memory
-        if executor_cores is not None:
-            body["executorCores"] = executor_cores
-        if num_executors is not None:
-            body["numExecutors"] = num_executors
-        if archives is not None:
-            body["archives"] = archives
-        if queue is not None:
-            body["queue"] = queue
-        if name is not None:
-            body["name"] = name
-        if spark_conf is not None:
-            body["conf"] = spark_conf
+            batch_session_params["args"] = args
+        common_params = _new_session_body(
+            proxy_user,
+            jars,
+            py_files,
+            files,
+            driver_memory,
+            driver_cores,
+            executor_memory,
+            executor_cores,
+            num_executors,
+            archives,
+            queue,
+            name,
+            spark_conf,
+        )
+        body = {**batch_session_params, **common_params}
 
         data = self._client.post("/batches", data=body)
         return Batch.from_json(data)
@@ -425,3 +437,48 @@ class LivyClient:
         """List all the active batches in Livy."""
         response = self._client.get("/batches")
         return [Batch.from_json(data) for data in response["sessions"]]
+
+
+def _new_session_body(
+    proxy_user: Optional[str],
+    jars: Optional[List[str]],
+    py_files: Optional[List[str]],
+    files: Optional[List[str]],
+    driver_memory: Optional[str],
+    driver_cores: Optional[int],
+    executor_memory: Optional[str],
+    executor_cores: Optional[int],
+    num_executors: Optional[int],
+    archives: Optional[List[str]],
+    queue: Optional[str],
+    name: Optional[str],
+    spark_conf: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    body: Dict[str, Any] = {}
+    if proxy_user is not None:
+        body["proxyUser"] = proxy_user
+    if jars is not None:
+        body["jars"] = jars
+    if py_files is not None:
+        body["pyFiles"] = py_files
+    if files is not None:
+        body["files"] = files
+    if driver_memory is not None:
+        body["driverMemory"] = driver_memory
+    if driver_cores is not None:
+        body["driverCores"] = driver_cores
+    if executor_memory is not None:
+        body["executorMemory"] = executor_memory
+    if executor_cores is not None:
+        body["executorCores"] = executor_cores
+    if num_executors is not None:
+        body["numExecutors"] = num_executors
+    if archives is not None:
+        body["archives"] = archives
+    if queue is not None:
+        body["queue"] = queue
+    if name is not None:
+        body["name"] = name
+    if spark_conf is not None:
+        body["conf"] = spark_conf
+    return body
